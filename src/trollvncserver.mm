@@ -69,7 +69,7 @@ static BOOL gEnabled = YES;
 static int gPort = 5901;
 static int gTvCtlPort = 0;        // port for control connections (0 = disabled)
 static NSString *gBindHost = nil; // optional bind address from CLI/config
-static NSString *gDesktopName = @"HuiKai";
+static NSString *gDesktopName = @"HuaKaiVNC";
 static BOOL gViewOnly = NO;
 static double gKeepAliveSec = 0.0; // 15..86400
 static BOOL gClipboardEnabled = YES;
