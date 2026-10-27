@@ -34,6 +34,8 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 @property(nonatomic, assign) NSInteger lastObservedChangeCount;   // last seen changeCount from UIPasteboard
 @property(nonatomic, assign) NSInteger lastLocalSetBaselineCount; // changeCount observed right before a local set
 @property(nonatomic, assign) NSInteger suppressNextCallbacks;     // >0: skip next onChange and one system notify once
+@property(nonatomic, strong) dispatch_source_t pollTimer;         // fallback polling timer
+- (void)pollPasteboard;
 @end
 
 @implementation ClipboardManager
@@ -96,6 +98,46 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
         self.lastObservedChangeCount = pb.changeCount;
         TVLog("Initial pasteboard changeCount=%ld", (long)self.lastObservedChangeCount);
     });
+
+    // Fallback: poll UIPasteboard.changeCount. The Darwin pasteboard notification is
+    // unreliable for background/daemon processes, which made phone->PC clipboard sync
+    // silently stop working. Polling guarantees we notice local copies.
+    dispatch_queue_t pollQueue = dispatch_queue_create("com.huakaivnc.clipboard.poll", DISPATCH_QUEUE_SERIAL);
+    self.pollTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, pollQueue);
+    if (self.pollTimer) {
+        uint64_t interval = (uint64_t)(0.5 * NSEC_PER_SEC);
+        dispatch_source_set_timer(self.pollTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)interval), interval,
+                                  (uint64_t)(0.1 * NSEC_PER_SEC));
+        __weak __typeof(self) weakPollSelf = self;
+        dispatch_source_set_event_handler(self.pollTimer, ^{
+            __strong __typeof(weakPollSelf) strongSelf = weakPollSelf;
+            if (!strongSelf)
+                return;
+            [strongSelf pollPasteboard];
+        });
+        dispatch_resume(self.pollTimer);
+        TVLog("Pasteboard polling started (0.5s interval)");
+    }
+}
+
+- (void)pollPasteboard {
+    if (!self.started)
+        return;
+
+    UIPasteboard *pb = [UIPasteboard generalPasteboard];
+    NSInteger currentCount = pb.changeCount;
+
+    if (self.lastObservedChangeCount < 0) {
+        self.lastObservedChangeCount = currentCount;
+        return;
+    }
+    if (currentCount == self.lastObservedChangeCount)
+        return;
+
+    NSInteger previousCount = self.lastObservedChangeCount;
+    self.lastObservedChangeCount = currentCount;
+    TVLog("Poll: pasteboard changeCount %ld -> %ld", (long)previousCount, (long)currentCount);
+    [self dispatchChangeIfNeededFromLocal:NO];
 }
 
 - (void)stop {
@@ -111,6 +153,12 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
         notify_cancel(self.notifyToken);
         TVLog("Notification token %d canceled", self.notifyToken);
         self.notifyToken = 0;
+    }
+
+    if (self.pollTimer) {
+        dispatch_source_cancel(self.pollTimer);
+        self.pollTimer = nil;
+        TVLog("Pasteboard polling stopped");
     }
 }
 
