@@ -74,7 +74,7 @@ jobs:
 
     strategy:
       matrix:
-        scheme: ["default", "rootless", "roothide", "bootstrap"]
+        scheme: ["bootstrap"]   # build trollstore tipa only
 
     steps:
       - name: Checkout repository
