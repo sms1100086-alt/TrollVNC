@@ -92,6 +92,7 @@ jobs:
         with:
           repository: roothide/theos
           path: theos-roothide
+          ref: b017e044a07757bf155179d8210652310ddafc92
           submodules: recursive
 
       - name: Install iOS SDKs
