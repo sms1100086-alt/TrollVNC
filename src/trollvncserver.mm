@@ -3261,14 +3261,18 @@ static void setXCutTextLatin1(char *str, int len, rfbClientPtr cl) {
 
     TVLog(@"Clipboard: received client cut text (Latin-1) len=%d", len);
     NSData *data = [NSData dataWithBytes:str length:(NSUInteger)len];
-    NSString *s = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+    // Most modern clients send UTF-8 in a plain ClientCutText message. Try UTF-8 first,
+    // otherwise Chinese text is decoded as Latin-1 and shows up as mojibake.
+    NSString *s = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (!s)
+        s = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
     if (!s)
         s = @"";
 
     dispatch_async(dispatch_get_main_queue(), ^{
         gClipboardSuppressSend.fetch_add(1, std::memory_order_relaxed);
 
-        TVLog(@"Clipboard: applying client text to UIPasteboard (Latin-1), suppression now=%d",
+        TVLog(@"Clipboard: applying client text to UIPasteboard (UTF-8-first), suppression now=%d",
               gClipboardSuppressSend.load(std::memory_order_relaxed));
         [[ClipboardManager sharedManager] setStringFromRemote:s];
 
